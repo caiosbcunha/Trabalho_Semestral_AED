@@ -165,12 +165,12 @@ int rolar_dado() {
  * Retorna a pilha de perguntas correspondente a unidade tematica
  * da posicao atual do jogador no tabuleiro.
  * ============================================================ */
-tp_pilha *selecionar_pilha_por_id(int pos,
+tp_pilha *selecionar_pilha_por_id(int id,
                                         tp_pilha *pu1,
                                         tp_pilha *pu2,
                                         tp_pilha *pu3) {
-    if (pos < LIMITE_U1) return pu1;
-    if (pos < LIMITE_U2) return pu2;
+    if (id < LIMITE_U1) return pu1;
+    if (id < LIMITE_U2) return pu2;
     return pu3;
 }
 
@@ -224,7 +224,7 @@ int aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
 
     /* ------ Casa Pergunta ------ */
     if (casa->tipo_casa == TIPO_PERGUNTA) {
-        tp_pilha *pilha = selecionar_pilha_por_posicao(pos, pu1, pu2, pu3);
+        tp_pilha *pilha = selecionar_pilha_por_id(pos, pu1, pu2, pu3);
 
         if (pilha_vazia(pilha)) {
             printf("  [!] Sem perguntas disponiveis para esta unidade.\n");
