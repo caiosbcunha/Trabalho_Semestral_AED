@@ -3,7 +3,8 @@
 #include<stdio.h>
 #include<stdlib.h>
 
-typedef int tp_item;
+typedef int 
+    tp_item;
 
 typedef struct tp_no_aux{
     struct tp_no_aux *ant;
@@ -92,8 +93,10 @@ int remove_listad(tp_listad *lista, tp_item e){
             atu->prox->ant = NULL;
         }else{
             if(lista->fim == atu){
-                lista->fim = atu->prox;
-                atu->prox->ant = NULL;
+                /* Removendo o último nó: atualiza 'fim' para o anterior */
+                lista->fim = atu->ant;
+                if (lista->fim != NULL)
+                    lista->fim->prox = NULL;
             }else{
                 atu->prox->ant = atu->ant;
                 atu->ant->prox = atu->prox;
