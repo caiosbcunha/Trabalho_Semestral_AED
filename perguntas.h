@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
 #include "pilha.h"
 
 /* ----------------------------------------------------------
@@ -137,12 +138,42 @@ void criar_perguntas(tp_pilha *pilha_u1, tp_pilha *pilha_u2,
             'B', 3, 2 },
 
         /* --- Unidade 3 --- */
-        {12, "PERGUNTA_12", "A", "B", "C", "D", 'A', 1, 3 },
-        {13, "PERGUNTA_13", "A", "B", "C", "D", 'A', 1, 3 },
-        {14, "PERGUNTA_14", "A", "B", "C", "D", 'A', 2, 3 },
-        {15, "PERGUNTA_15", "A", "B", "C", "D", 'A', 2, 3 },
-        {16, "PERGUNTA_16", "A", "B", "C", "D", 'A', 3, 3 },
-        {17, "PERGUNTA_17", "A", "B", "C", "D", 'A', 3, 3 },
+        {12, "Qual função da biblioteca stdio.h em C é utilizada para abrir um arquivo para leitura?",
+            "fopen()",
+            "fclose()",
+            "fread()",
+            "fwrite()",
+            'A', 1, 3 },
+        {13, "Em uma árvore binária, qual característica define que cada nó possui no máximo dois filhos?",
+            "É uma propriedade estrutural da árvore binária.",
+            "É uma regra de ordenação dos elementos.",
+            "Significa que a árvore é necessariamente balanceada.",
+            "Indica que a árvore não pode conter valores repetidos.",
+            'A', 1, 3 },
+        {14, "Qual tipo de árvore balanceada ajusta automaticamente rotações para manter a altura mínima após inserções e exclusões?",
+            "Árvore AVL",
+            "Lista duplamente encadeada",
+            "Árvore B",
+            "Tabela hash",
+            'A', 2, 3 },
+        {15, "Em um heap binário máximo (max-heap), qual elemento está garantidamente na raiz?",
+            "O menor elemento armazenado",
+            "O elemento inserido mais recentemente",
+            "O maior elemento armazenado",
+            "O elemento do meio do conjunto",
+            'C', 2, 3 },
+        {16, "Qual é a principal diferença entre uma árvore de decisão digital e uma árvore genealógica não digital?",
+            "A árvore de decisão é usada apenas para armazenar arquivos.",
+            "A árvore de decisão organiza condições e resultados; a árvore genealógica mostra relações de parentesco.",
+            "A árvore genealógica não pode ser representada como estrutura de dados.",
+            "A árvore de decisão não possui nós internos.",
+            'B', 3, 3 },
+        {17, "Qual exemplo a seguir representa uma árvore não digital em termos de organização hierárquica?",
+            "Uma planilha eletrônica",
+            "Um arquivo de texto simples",
+            "Um banco de dados relacional",
+            "O sistema de pastas de um escritório físico",
+            'D', 3, 3 },
     
     };
 

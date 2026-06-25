@@ -10,6 +10,17 @@
 #include <stdlib.h>
 
 /* ----------------------------------------------------------
+ * limpar_stdin
+ * Consome todos os caracteres que o scanf deixou no buffer
+ * (inclusive o '\n' do Enter), impedindo que getchar() leia
+ * uma tecla "fantasma" no próximo turno.
+ * ---------------------------------------------------------- */
+static void limpar_stdin(void) {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+/* ----------------------------------------------------------
  * Tipos de casa
  * ---------------------------------------------------------- */
 #define TIPO_NORMAL    1
@@ -26,10 +37,18 @@
 #define CASAS_PENALIDADE_ERRO  1
 
 /* ----------------------------------------------------------
- * Limites de unidade tematica
- * Casa  0-14  -> Unidade 1 (pilha_u1)
- * Casa 15-29  -> Unidade 2 (pilha_u2)
- * Casa 30-44  -> Unidade 3 (pilha_u3)
+ * Pontuação por nível de pergunta
+ *   Nível 1 (Fácil)  → 10 pts
+ *   Nível 2 (Médio)  → 20 pts
+ *   Nível 3 (Difícil)→ 30 pts
+ * ---------------------------------------------------------- */
+#define PONTOS_POR_NIVEL 10
+
+/* ----------------------------------------------------------
+ * Limites de unidade temática
+ *   Casa  0-14 → Unidade 1
+ *   Casa 15-29 → Unidade 2
+ *   Casa 30-44 → Unidade 3
  * ---------------------------------------------------------- */
 #define LIMITE_U1 15
 #define LIMITE_U2 30
@@ -46,80 +65,40 @@ typedef tp_listad Caminho;
 
 /* ============================================================
  * criar_caminho
- * Inicializa as 45 casas com seus tipos e as insere na lista
- * duplamente encadeada que representa o tabuleiro.
  * ============================================================ */
 Caminho *criar_caminho(Casa banco[]) {
     int tipos[TAMANHO_CAMINHO] = {
-        /* 0  */ TIPO_NORMAL,
-        /* 1  */ TIPO_NORMAL,
-        /* 2  */ TIPO_PERGUNTA,
-        /* 3  */ TIPO_SORTE,
-        /* 4  */ TIPO_NORMAL,
-        /* 5  */ TIPO_REVES,
-        /* 6  */ TIPO_PERGUNTA,
-        /* 7  */ TIPO_NORMAL,
-        /* 8  */ TIPO_SORTE,
-        /* 9  */ TIPO_PERGUNTA,
-        /* 10 */ TIPO_NORMAL,
-        /* 11 */ TIPO_REVES,
-        /* 12 */ TIPO_PERGUNTA,
-        /* 13 */ TIPO_NORMAL,
-        /* 14 */ TIPO_PERGUNTA,  /* Ultima casa da Unidade 1 */
-        /* 15 */ TIPO_NORMAL,
-        /* 16 */ TIPO_SORTE,
-        /* 17 */ TIPO_PERGUNTA,
-        /* 18 */ TIPO_NORMAL,
-        /* 19 */ TIPO_REVES,
-        /* 20 */ TIPO_PERGUNTA,
-        /* 21 */ TIPO_NORMAL,
-        /* 22 */ TIPO_SORTE,
-        /* 23 */ TIPO_PERGUNTA,
-        /* 24 */ TIPO_REVES,
-        /* 25 */ TIPO_NORMAL,
-        /* 26 */ TIPO_PERGUNTA,
-        /* 27 */ TIPO_NORMAL,
-        /* 28 */ TIPO_SORTE,
-        /* 29 */ TIPO_PERGUNTA,  /* Ultima casa da Unidade 2 */
-        /* 30 */ TIPO_NORMAL,
-        /* 31 */ TIPO_REVES,
-        /* 32 */ TIPO_PERGUNTA,
-        /* 33 */ TIPO_NORMAL,
-        /* 34 */ TIPO_SORTE,
-        /* 35 */ TIPO_PERGUNTA,
-        /* 36 */ TIPO_NORMAL,
-        /* 37 */ TIPO_REVES,
-        /* 38 */ TIPO_PERGUNTA,
-        /* 39 */ TIPO_NORMAL,
-        /* 40 */ TIPO_SORTE,
-        /* 41 */ TIPO_PERGUNTA,
-        /* 42 */ TIPO_NORMAL,
-        /* 43 */ TIPO_REVES,
-        /* 44 */ TIPO_NORMAL    /* Chegada */
+        TIPO_NORMAL,   TIPO_NORMAL,   TIPO_PERGUNTA, TIPO_SORTE,
+        TIPO_NORMAL,   TIPO_REVES,    TIPO_PERGUNTA, TIPO_NORMAL,
+        TIPO_SORTE,    TIPO_PERGUNTA, TIPO_NORMAL,   TIPO_REVES,
+        TIPO_PERGUNTA, TIPO_NORMAL,   TIPO_PERGUNTA,
+        TIPO_NORMAL,   TIPO_SORTE,    TIPO_PERGUNTA, TIPO_NORMAL,
+        TIPO_REVES,    TIPO_PERGUNTA, TIPO_NORMAL,   TIPO_SORTE,
+        TIPO_PERGUNTA, TIPO_REVES,    TIPO_NORMAL,   TIPO_PERGUNTA,
+        TIPO_NORMAL,   TIPO_SORTE,    TIPO_PERGUNTA,
+        TIPO_NORMAL,   TIPO_REVES,    TIPO_PERGUNTA, TIPO_NORMAL,
+        TIPO_SORTE,    TIPO_PERGUNTA, TIPO_NORMAL,   TIPO_REVES,
+        TIPO_PERGUNTA, TIPO_NORMAL,   TIPO_SORTE,    TIPO_PERGUNTA,
+        TIPO_NORMAL,   TIPO_REVES,    TIPO_NORMAL
     };
 
     Caminho *caminho = inicializa_listad();
-
     for (int i = 0; i < TAMANHO_CAMINHO; i++) {
         banco[i].id_casa   = i;
         banco[i].tipo_casa = tipos[i];
         insere_listad_no_fim(caminho, banco[i].id_casa);
     }
-
     printf("-> Caminho criado com %d casas!\n\n", TAMANHO_CAMINHO);
     return caminho;
 }
 
 /* ============================================================
  * encontrar_no_por_id
- * Percorre a lista e retorna o no cujo campo 'info' == id_casa.
- * Retorna NULL se nao encontrado.
  * ============================================================ */
 tp_no *encontrar_no_por_id(Caminho *caminho, int id_casa) {
     tp_no *atu = caminho->ini;
     while (atu != NULL) {
-        if (atu->info == id_casa)
-            return atu;
+        if (atu->info == id_casa) return atu;
         atu = atu->prox;
     }
     return NULL;
@@ -127,18 +106,10 @@ tp_no *encontrar_no_por_id(Caminho *caminho, int id_casa) {
 
 /* ============================================================
  * mover_na_lista
- * Navega pela lista encadeada a partir de 'pos_atual' avancando
- * (passos > 0) ou recuando (passos < 0) casa a casa.
- *
- * - Avanco: usa ->prox; para no ultimo no se chegar a casa 44.
- * - Recuo : usa ->ant; para no primeiro no (casa 0) se necessario.
- *
- * Retorna o id da casa de destino.
  * ============================================================ */
 int mover_na_lista(Caminho *caminho, int pos_atual, int passos) {
     tp_no *no = encontrar_no_por_id(caminho, pos_atual);
-
-    if (no == NULL) return pos_atual; /* seguranca: posicao invalida */
+    if (no == NULL) return pos_atual;
 
     if (passos > 0) {
         for (int i = 0; i < passos && no->prox != NULL; i++)
@@ -148,27 +119,23 @@ int mover_na_lista(Caminho *caminho, int pos_atual, int passos) {
         for (int i = 0; i < recuo && no->ant != NULL; i++)
             no = no->ant;
     }
-
     return no->info;
 }
 
 /* ============================================================
  * rolar_dado
- * Retorna um valor aleatorio entre 1 e 6.
  * ============================================================ */
 int rolar_dado() {
     return (rand() % 6) + 1;
 }
 
 /* ============================================================
- * selecionar_pilha_por_posicao
- * Retorna a pilha de perguntas correspondente a unidade tematica
- * da posicao atual do jogador no tabuleiro.
+ * selecionar_pilha_por_id
  * ============================================================ */
 tp_pilha *selecionar_pilha_por_id(int id,
-                                        tp_pilha *pu1,
-                                        tp_pilha *pu2,
-                                        tp_pilha *pu3) {
+                                   tp_pilha *pu1,
+                                   tp_pilha *pu2,
+                                   tp_pilha *pu3) {
     if (id < LIMITE_U1) return pu1;
     if (id < LIMITE_U2) return pu2;
     return pu3;
@@ -176,17 +143,11 @@ tp_pilha *selecionar_pilha_por_id(int id,
 
 /* ============================================================
  * aplicar_efeito_casa
- * Le o tipo da casa onde o jogador parou e executa a acao:
  *
- *   NORMAL   -> nenhum efeito
- *   SORTE    -> avanca CASAS_BONUS_SORTE casas
- *   REVES    -> recua  CASAS_PENALIDADE_REVES casas
- *   PERGUNTA -> retira pergunta da pilha da unidade correta,
- *               exibe ao jogador e processa a resposta:
- *                 acerto -> avanca CASAS_BONUS_ACERTO casas
- *                 erro   -> recua  CASAS_PENALIDADE_ERRO casas
- *
- * Retorna 1 em acerto/efeito neutro, 0 em erro/penalidade.
+ * MODIFICAÇÕES em relação à versão original (secção PERGUNTA):
+ *   • Acerto → jogador->pontuacao  += nivel * PONTOS_POR_NIVEL
+ *              registra id_pergunta em perguntas_acertadas[]
+ *   • Erro   → registra id_pergunta em perguntas_erradas[]
  * ============================================================ */
 int aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
                         Casa banco_c[], Pergunta banco_p[],
@@ -241,14 +202,29 @@ int aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
         char resposta;
         printf("\n  Sua resposta (A/B/C/D): ");
         scanf(" %c", &resposta);
+        limpar_stdin(); /* remove o '\n' (e qualquer outro char) que scanf deixou no buffer */
 
         if (verificar_resposta(*p, resposta)) {
+
+            /* --- Acerto: pontua e registra --- */
+            int pontos  = p->nivel * PONTOS_POR_NIVEL;
+            jogador->pontuacao += pontos;
+
+            if (jogador->qtd_acertadas < MAX_HISTORICO_PERGUNTAS)
+                jogador->perguntas_acertadas[jogador->qtd_acertadas++] = id_pergunta;
+
             int nova_pos = mover_na_lista(caminho, pos, CASAS_BONUS_ACERTO);
-            printf("\n  ** ACERTO! %s avanca %d casas: %d -> %d **\n",
-                   jogador->nome, CASAS_BONUS_ACERTO, pos, nova_pos);
+            printf("\n  ** ACERTO! +%d pts. %s avanca %d casas: %d -> %d **\n",
+                   pontos, jogador->nome, CASAS_BONUS_ACERTO, pos, nova_pos);
             jogador->posicao_tabuleiro = nova_pos;
             return 1;
+
         } else {
+
+            /* --- Erro: apenas registra (sem perda de pontos) --- */
+            if (jogador->qtd_erradas < MAX_HISTORICO_PERGUNTAS)
+                jogador->perguntas_erradas[jogador->qtd_erradas++] = id_pergunta;
+
             int nova_pos = mover_na_lista(caminho, pos, -CASAS_PENALIDADE_ERRO);
             printf("\n  ** ERROU! Resposta correta: %c. %s volta %d casa(s): %d -> %d **\n",
                    p->resposta_correta, jogador->nome,
@@ -258,16 +234,11 @@ int aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
         }
     }
 
-    return 1; /* tipo desconhecido: nenhuma acao */
+    return 1;
 }
 
 /* ============================================================
  * imprimir_tabuleiro
- * Exibe o estado atual do tabuleiro percorrendo a lista
- * encadeada e indicando onde cada jogador esta posicionado.
- *
- * Legenda de tipos:
- *   [.] Normal   [+] Sorte   [-] Reves   [?] Pergunta
  * ============================================================ */
 void imprimir_tabuleiro(Caminho *caminho, Casa banco_c[],
                         Jogador banco_j[], int qtd_jogadores) {
@@ -276,7 +247,6 @@ void imprimir_tabuleiro(Caminho *caminho, Casa banco_c[],
     tp_no *atu = caminho->ini;
     while (atu != NULL) {
         int id = atu->info;
-
         char tipo_label;
         switch (banco_c[id].tipo_casa) {
             case TIPO_NORMAL:   tipo_label = '.'; break;
@@ -287,15 +257,12 @@ void imprimir_tabuleiro(Caminho *caminho, Casa banco_c[],
         }
 
         printf("  Casa %2d [%c]", id, tipo_label);
-
-        for (int i = 0; i < qtd_jogadores; i++) {
+        for (int i = 0; i < qtd_jogadores; i++)
             if (banco_j[i].posicao_tabuleiro == id)
                 printf(" <%s>", banco_j[i].nome);
-        }
 
-        if (id == 0)                   printf(" <- INICIO");
-        if (id == TAMANHO_CAMINHO - 1) printf(" <- CHEGADA");
-
+        if (id == 0)                    printf(" <- INICIO");
+        if (id == TAMANHO_CAMINHO - 1)  printf(" <- CHEGADA");
         printf("\n");
         atu = atu->prox;
     }
