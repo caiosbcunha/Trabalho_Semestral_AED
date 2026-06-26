@@ -15,7 +15,7 @@
  * (inclusive o '\n' do Enter), impedindo que getchar() leia
  * uma tecla "fantasma" no próximo turno.
  * ---------------------------------------------------------- */
-static void limpar_stdin(void) {
+void limpar_stdin(void) {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
 }
@@ -30,10 +30,14 @@ static void limpar_stdin(void) {
 
 /* ----------------------------------------------------------
  * Constantes de efeito
+ *
+ * Observacao: o avanco por ACERTO NAO e fixo — depende do nivel
+ * da pergunta (Facil = 1, Medio = 2, Dificil = 3 casas), conforme
+ * o requisito "associar cada nivel a uma quantidade diferente de
+ * avanco". Por isso nao existe mais uma constante CASAS_BONUS_ACERTO.
  * ---------------------------------------------------------- */
 #define CASAS_BONUS_SORTE      3
 #define CASAS_PENALIDADE_REVES 2
-#define CASAS_BONUS_ACERTO     2
 #define CASAS_PENALIDADE_ERRO  1
 
 /* ----------------------------------------------------------
@@ -62,6 +66,21 @@ typedef struct {
 } Casa;
 
 typedef tp_listad Caminho;
+
+/* ----------------------------------------------------------
+ * ResultadoJogada
+ * Resumo do que aconteceu quando o jogador caiu numa casa.
+ * Preenchido por aplicar_efeito_casa() e usado pelo main para
+ * atualizar as estatisticas (AVL) e gravar o historico em CSV.
+ * ---------------------------------------------------------- */
+typedef struct {
+    int  respondeu_pergunta; /* 1 se a casa era de pergunta e foi respondida */
+    int  id_pergunta;        /* id da pergunta respondida                    */
+    char resposta_jogador;   /* alternativa escolhida (A/B/C/D)              */
+    int  acertou;            /* 1 = acertou | 0 = errou                      */
+    int  pontos_ganhos;      /* pontos somados nesta jogada                  */
+    int  casa_pergunta;      /* casa onde a pergunta foi respondida          */
+} ResultadoJogada;
 
 /* ============================================================
  * criar_caminho
@@ -142,82 +161,132 @@ tp_pilha *selecionar_pilha_por_id(int id,
 }
 
 /* ============================================================
+ * unidade_por_id
+ * Retorna a unidade (1, 2 ou 3) correspondente a uma casa.
+ * ============================================================ */
+int unidade_por_id(int id) {
+    if (id < LIMITE_U1) return 1;
+    if (id < LIMITE_U2) return 2;
+    return 3;
+}
+
+/* ============================================================
+ * tipo_casa_str
+ * Rotulo textual (sem acento) do tipo de casa, para relatorios.
+ * ============================================================ */
+const char *tipo_casa_str(int tipo) {
+    switch (tipo) {
+        case TIPO_NORMAL:   return "Normal";
+        case TIPO_SORTE:    return "Sorte";
+        case TIPO_REVES:    return "Reves";
+        case TIPO_PERGUNTA: return "Pergunta";
+        default:            return "Desconhecido";
+    }
+}
+
+/* ============================================================
  * aplicar_efeito_casa
  *
- * MODIFICAÇÕES em relação à versão original (secção PERGUNTA):
- *   • Acerto → jogador->pontuacao  += nivel * PONTOS_POR_NIVEL
- *              registra id_pergunta em perguntas_acertadas[]
- *   • Erro   → registra id_pergunta em perguntas_erradas[]
+ * Aplica o efeito da casa onde o jogador parou e devolve um
+ * ResultadoJogada descrevendo o que aconteceu (usado pelo main
+ * para atualizar a AVL de estatisticas e gravar o historico).
+ *
+ * Casa de PERGUNTA:
+ *   • O nivel da pergunta e sorteado de forma aleatoria, pois a
+ *     pilha da unidade foi previamente embaralhada com os tres
+ *     niveis misturados; retira-se sempre o elemento do topo (LIFO).
+ *   • Se a pilha esgotar, ela e reembaralhada e reconstituida
+ *     antes de retirar a proxima pergunta.
+ *   • Acerto → +nivel*PONTOS_POR_NIVEL e avanca 'nivel' casas
+ *              (Facil=1, Medio=2, Dificil=3).
+ *   • Erro   → volta CASAS_PENALIDADE_ERRO casa(s).
  * ============================================================ */
-int aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
+ResultadoJogada aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
                         Casa banco_c[], Pergunta banco_p[],
                         tp_pilha *pu1, tp_pilha *pu2, tp_pilha *pu3) {
 
     int   pos  = jogador->posicao_tabuleiro;
     Casa *casa = &banco_c[pos];
 
-    const char *nomes_tipo[] = { "", "Normal", "Sorte", "Reves", "Pergunta" };
-    printf("\n  [Casa %2d | %s]\n", pos, nomes_tipo[casa->tipo_casa]);
+    /* Resultado "vazio" por padrao (casas que nao sao de pergunta) */
+    ResultadoJogada r = { 0, -1, ' ', 0, 0, pos };
 
     /* ------ Casa Normal ------ */
     if (casa->tipo_casa == TIPO_NORMAL) {
-        printf("  Casa normal. Nenhum efeito adicional.\n");
-        return 1;
+        printf("  Casa %d [NORMAL]   -> sem efeito.\n", pos);
+        return r;
     }
 
     /* ------ Casa Sorte ------ */
     if (casa->tipo_casa == TIPO_SORTE) {
         int nova_pos = mover_na_lista(caminho, pos, CASAS_BONUS_SORTE);
-        printf("  ** SORTE! %s avanca %d casas: %d -> %d **\n",
-               jogador->nome, CASAS_BONUS_SORTE, pos, nova_pos);
+        printf("  Casa %d [SORTE]    -> SORTE! Avanca %d casas: %d -> %d\n",
+               pos, CASAS_BONUS_SORTE, pos, nova_pos);
         jogador->posicao_tabuleiro = nova_pos;
-        return 1;
+        return r;
     }
 
     /* ------ Casa Reves ------ */
     if (casa->tipo_casa == TIPO_REVES) {
         int nova_pos = mover_na_lista(caminho, pos, -CASAS_PENALIDADE_REVES);
-        printf("  ** REVES! %s volta %d casas: %d -> %d **\n",
-               jogador->nome, CASAS_PENALIDADE_REVES, pos, nova_pos);
+        printf("  Casa %d [REVES]    -> REVES! Volta %d casas: %d -> %d\n",
+               pos, CASAS_PENALIDADE_REVES, pos, nova_pos);
         jogador->posicao_tabuleiro = nova_pos;
-        return 0;
+        return r;
     }
 
     /* ------ Casa Pergunta ------ */
     if (casa->tipo_casa == TIPO_PERGUNTA) {
         tp_pilha *pilha = selecionar_pilha_por_id(pos, pu1, pu2, pu3);
 
+        /* Conjunto esgotado: reembaralha e reconstitui a unidade */
         if (pilha_vazia(pilha)) {
-            printf("  [!] Sem perguntas disponiveis para esta unidade.\n");
-            printf("      Casa tratada como Normal.\n");
-            return 1;
+            int unidade = unidade_por_id(pos);
+            printf("  [i] Perguntas da Unidade %d esgotadas -> reembaralhando...\n",
+                   unidade);
+            preencher_pilha_unidade(pilha, banco_p, unidade);
         }
 
         int id_pergunta;
         pop(pilha, &id_pergunta);
         Pergunta *p = &banco_p[id_pergunta];
 
+        printf("  Casa %d [PERGUNTA]  (Unid.%d | %s | %s)\n",
+               pos, p->unidade, p->tema, nivel_para_str(p->nivel));
         exibir_pergunta(*p);
 
         char resposta;
-        printf("\n  Sua resposta (A/B/C/D): ");
+        printf("\n  Resposta (A/B/C/D): ");
         scanf(" %c", &resposta);
         limpar_stdin(); /* remove o '\n' (e qualquer outro char) que scanf deixou no buffer */
 
+        /* Normaliza a resposta para maiuscula no registro */
+        char resp_norm = (resposta >= 'a' && resposta <= 'z')
+                         ? (char)(resposta - 32) : resposta;
+
+        r.respondeu_pergunta = 1;
+        r.id_pergunta        = id_pergunta;
+        r.resposta_jogador   = resp_norm;
+        r.casa_pergunta      = pos;
+
         if (verificar_resposta(*p, resposta)) {
 
-            /* --- Acerto: pontua e registra --- */
+            /* --- Acerto: pontua, registra e avanca 'nivel' casas --- */
             int pontos  = p->nivel * PONTOS_POR_NIVEL;
+            int avanco  = p->nivel; /* Facil=1, Medio=2, Dificil=3 */
             jogador->pontuacao += pontos;
 
             if (jogador->qtd_acertadas < MAX_HISTORICO_PERGUNTAS)
                 jogador->perguntas_acertadas[jogador->qtd_acertadas++] = id_pergunta;
 
-            int nova_pos = mover_na_lista(caminho, pos, CASAS_BONUS_ACERTO);
-            printf("\n  ** ACERTO! +%d pts. %s avanca %d casas: %d -> %d **\n",
-                   pontos, jogador->nome, CASAS_BONUS_ACERTO, pos, nova_pos);
+            int nova_pos = mover_na_lista(caminho, pos, avanco);
+            printf("  [ACERTOU] +%d pts. Avanca %d casa(s): %d -> %d\n",
+                   pontos, avanco, pos, nova_pos);
             jogador->posicao_tabuleiro = nova_pos;
-            return 1;
+
+            r.acertou       = 1;
+            r.pontos_ganhos = pontos;
+            return r;
 
         } else {
 
@@ -226,48 +295,91 @@ int aplicar_efeito_casa(Jogador *jogador, Caminho *caminho,
                 jogador->perguntas_erradas[jogador->qtd_erradas++] = id_pergunta;
 
             int nova_pos = mover_na_lista(caminho, pos, -CASAS_PENALIDADE_ERRO);
-            printf("\n  ** ERROU! Resposta correta: %c. %s volta %d casa(s): %d -> %d **\n",
-                   p->resposta_correta, jogador->nome,
-                   CASAS_PENALIDADE_ERRO, pos, nova_pos);
+            printf("  [ERROU] Resposta certa: %c. Volta %d casa(s): %d -> %d\n",
+                   p->resposta_correta, CASAS_PENALIDADE_ERRO, pos, nova_pos);
             jogador->posicao_tabuleiro = nova_pos;
-            return 0;
+
+            r.acertou       = 0;
+            r.pontos_ganhos = 0;
+            return r;
         }
     }
 
-    return 1;
+    return r;
 }
+
+/* ----------------------------------------------------------
+ * Quantas casas sao exibidas por linha do tabuleiro.
+ * 15 = 1 unidade (o tabuleiro tem 45 casas = 3 unidades).
+ * ---------------------------------------------------------- */
+#define CASAS_POR_LINHA 15
 
 /* ============================================================
  * imprimir_tabuleiro
+ * Mostra o tabuleiro na HORIZONTAL, em trilhas por unidade
+ * (15 casas por linha). Cada casa e uma caixinha [NN T] e os
+ * jogadores aparecem pelo numero, centralizados sob a casa.
+ *
+ *   T: I=Inicio  C=Chegada  .=Normal  +=Sorte  -=Reves  ?=Pergunta
  * ============================================================ */
 void imprimir_tabuleiro(Caminho *caminho, Casa banco_c[],
                         Jogador banco_j[], int qtd_jogadores) {
-    printf("\n=== TABULEIRO ===\n");
+    (void)caminho; /* o layout usa o banco de casas indexado por id */
 
-    tp_no *atu = caminho->ini;
-    while (atu != NULL) {
-        int id = atu->info;
-        char tipo_label;
-        switch (banco_c[id].tipo_casa) {
-            case TIPO_NORMAL:   tipo_label = '.'; break;
-            case TIPO_SORTE:    tipo_label = '+'; break;
-            case TIPO_REVES:    tipo_label = '-'; break;
-            case TIPO_PERGUNTA: tipo_label = '?'; break;
-            default:            tipo_label = ' '; break;
+    imprimir_titulo("CAMINHO DO CONHECIMENTO");
+    printf("  Legenda: [.]Normal  [+]Sorte  [-]Reves  [?]Pergunta   (I=Inicio  C=Chegada)\n");
+
+    for (int base = 0; base < TAMANHO_CAMINHO; base += CASAS_POR_LINHA) {
+        int fim = base + CASAS_POR_LINHA;
+        if (fim > TAMANHO_CAMINHO) fim = TAMANHO_CAMINHO;
+
+        printf("\n  Unidade %d\n  ", unidade_por_id(base));
+
+        /* ---- Linha das casas ---- */
+        for (int id = base; id < fim; id++) {
+            char t;
+            switch (banco_c[id].tipo_casa) {
+                case TIPO_SORTE:    t = '+'; break;
+                case TIPO_REVES:    t = '-'; break;
+                case TIPO_PERGUNTA: t = '?'; break;
+                default:            t = '.'; break;
+            }
+            if (id == 0)                   t = 'I';
+            if (id == TAMANHO_CAMINHO - 1) t = 'C';
+            printf("[%02d%c]", id, t);
         }
+        printf("\n  ");
 
-        printf("  Casa %2d [%c]", id, tipo_label);
-        for (int i = 0; i < qtd_jogadores; i++)
-            if (banco_j[i].posicao_tabuleiro == id)
-                printf(" <%s>", banco_j[i].nome);
+        /* ---- Linha dos jogadores (numero centralizado sob a casa) ---- */
+        for (int id = base; id < fim; id++) {
+            char celula[6] = "     "; /* 5 espacos = largura de [NN T] */
+            int n = 0;
 
-        if (id == 0)                    printf(" <- INICIO");
-        if (id == TAMANHO_CAMINHO - 1)  printf(" <- CHEGADA");
+            for (int i = 0; i < qtd_jogadores && n < 4; i++)
+                if (banco_j[i].posicao_tabuleiro == id)
+                    n++; /* conta quantos jogadores estao nesta casa */
+
+            int ini = (5 - n) / 2; /* posicao inicial para centralizar */
+            int col = 0;
+            for (int i = 0; i < qtd_jogadores && col < n; i++)
+                if (banco_j[i].posicao_tabuleiro == id)
+                    celula[ini + col++] = (char)('1' + i);
+
+            celula[5] = '\0';
+            printf("%s", celula);
+        }
         printf("\n");
-        atu = atu->prox;
     }
 
-    printf("\n  Legenda: [.] Normal  [+] Sorte  [-] Reves  [?] Pergunta\n\n");
+    /* ---- Legenda com nome e posicao de cada jogador ---- */
+    printf("\n  Jogadores: ");
+    for (int i = 0; i < qtd_jogadores; i++) {
+        printf("%d=%s (casa %d)", i + 1, banco_j[i].nome,
+               banco_j[i].posicao_tabuleiro);
+        if (i < qtd_jogadores - 1) printf("  |  ");
+    }
+    printf("\n");
+    linha_separadora('=', LARGURA_TELA);
 }
 
 #endif /* CAMINHO_H */

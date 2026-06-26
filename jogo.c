@@ -9,14 +9,16 @@
  *        o id dessa casa é inserido na AVL.
  *      • A árvore garante busca/inserção em O(log n) no pior caso.
  *      • Ao final do jogo, exibe quantas vezes cada casa foi
- *        visitada, percorrendo a árvore em ordem crescente (emOrd).
+ *        visitada, com acertos e erros, percorrendo em ordem.
  *
- *   2. Persistência em disco e ranking (ranking.h)
- *      • Ao final do jogo, salva em 'resultados.txt':
- *          nome, pontuação, IDs das perguntas certas e erradas.
- *      • Em seguida, lê esse arquivo e exibe o ranking ordenado
- *        da maior para a menor pontuação, com detalhes de cada
- *        pergunta acertada/errada.
+ *   2. Persistência em disco e ranking (ranking.h / historico.h /
+ *      estatisticas.h)
+ *      • Ao final do jogo, salva 'resultados.txt' e os CSVs
+ *        (perguntas, histórico de respostas e estatísticas).
+ *
+ *   3. Interface no terminal organizada (ui.h)
+ *      • Acentos corretos (UTF-8), tela limpa a cada turno e
+ *        painéis com o tabuleiro na horizontal.
  * ================================================================ */
 
 #include <stdio.h>
@@ -24,14 +26,17 @@
 #include <time.h>
 
 /* Módulos do jogo */
-#include "jogador.h"    /* Jogador + Fila de turnos              */
-#include "perguntas.h"  /* Pergunta + Pilhas por Unidade         */
-#include "caminho.h"    /* Casa + Lista Duplamente Encadeada     */
-#include "arvoreAVL.h"  /* Árvore AVL para estatísticas de casas */
-#include "ranking.h"    /* Persistência em disco + ranking       */
+#include "ui.h"           /* Interface: tela limpa, divisórias, textos     */
+#include "jogador.h"      /* Jogador + Fila de turnos                       */
+#include "perguntas.h"    /* Pergunta + Pilhas por Unidade                  */
+#include "caminho.h"      /* Casa + Lista Duplamente Encadeada              */
+#include "arvoreAVL.h"    /* Árvore AVL para estatísticas de casas          */
+#include "ranking.h"      /* Persistência em disco + ranking                */
+#include "historico.h"    /* Exportação CSV (modelo do professor)           */
+#include "estatisticas.h" /* Estatísticas por casa em disco (CSV)           */
 
 /* ----------------------------------------------------------------
- * flush_buffer — descarta stdin até o '\n'
+ * flush_buffer — descarta stdin até o '\n' (aguarda o ENTER)
  * ---------------------------------------------------------------- */
 void flush_buffer() {
     int c;
@@ -70,24 +75,24 @@ int main() {
     ArvAVL *avl_casas = criarAVL();
 
     /* ----------------------------------------------------------
-     * Cabeçalho
+     * Tela inicial e inicialização dos módulos
      * ---------------------------------------------------------- */
-    printf("=========================================\n");
-    printf("       CAMINHO DO CONHECIMENTO           \n");
-    printf("=========================================\n\n");
+    limpar_tela();
+    imprimir_titulo("CAMINHO DO CONHECIMENTO");
+    printf("\n  Bem-vindo(a)! Vamos preparar a partida.\n\n");
 
-    /* ----------------------------------------------------------
-     * Inicialização dos módulos
-     * ---------------------------------------------------------- */
     criar_jogadores(&fila_jogadores, banco_jogadores);
     flush_buffer();
     qtd_jogadores = tamanhoFila(&fila_jogadores);
 
     criar_perguntas(&pilha_u1, &pilha_u2, &pilha_u3, banco_perguntas);
 
-    caminho = criar_caminho(banco_casas);
+    /* Exporta a tabela de referência das perguntas e inicia o
+     * arquivo de histórico (1 linha por resposta) em CSV. */
+    salvar_perguntas_csv(banco_perguntas, QTD_PERGUNTAS);
+    iniciar_historico_csv();
 
-    imprimir_tabuleiro(caminho, banco_casas, banco_jogadores, qtd_jogadores);
+    caminho = criar_caminho(banco_casas);
 
     /* ----------------------------------------------------------
      * Loop principal do jogo
@@ -101,73 +106,80 @@ int main() {
         removeFila(&fila_jogadores, &id_atual);
         Jogador *jogador = &banco_jogadores[id_atual];
 
-        printf("=========================================\n");
-        printf(" TURNO %d | %s | Casa atual: %d | Pontos: %d\n",
-               turno, jogador->nome,
-               jogador->posicao_tabuleiro,
-               jogador->pontuacao);
-        printf("=========================================\n");
+        /* ------ Tela limpa: tabuleiro no topo + painel do turno ------ */
+        limpar_tela();
+        imprimir_tabuleiro(caminho, banco_casas, banco_jogadores, qtd_jogadores);
 
-        printf("  [Pressione ENTER para rolar o dado...] ");
+        printf("\n  >> TURNO %d   Jogador: %s   Casa %d   Pontos: %d\n",
+               turno, jogador->nome,
+               jogador->posicao_tabuleiro, jogador->pontuacao);
+
+        printf("\n  [ENTER para rolar o dado...]");
         fflush(stdout);
-        flush_buffer(); /* lê até '\n': aguarda o Enter e descarta chars extras */
+        flush_buffer();
 
         /* ------ Rola o dado e move ------ */
         int dado    = rolar_dado();
         int pos_ant = jogador->posicao_tabuleiro;
         int nova_pos = mover_na_lista(caminho, pos_ant, dado);
 
-        printf("\n  Dado: %d  |  Movimento: Casa %d -> Casa %d\n",
-               dado, pos_ant, nova_pos);
-
+        printf("\n  Dado: %d   ->   Casa %d ... %d\n", dado, pos_ant, nova_pos);
         jogador->posicao_tabuleiro = nova_pos;
 
-        /* ------ Registra a visita na Árvore AVL ------ *
-         * O jogador "caiu" em nova_pos; inserir() incrementa
-         * o contador se a casa já estava na árvore (O(log n)).  */
+        /* ------ Registra a visita na Árvore AVL (O(log n)) ------ */
         inserir(avl_casas, nova_pos);
 
         /* ------ Aplica o efeito da casa ------ */
-        aplicar_efeito_casa(jogador, caminho, banco_casas, banco_perguntas,
-                            &pilha_u1, &pilha_u2, &pilha_u3);
+        ResultadoJogada rj = aplicar_efeito_casa(jogador, caminho, banco_casas,
+                                                 banco_perguntas,
+                                                 &pilha_u1, &pilha_u2, &pilha_u3);
 
-        printf("\n  Posicao final neste turno: Casa %d  | Pontos: %d\n",
-               jogador->posicao_tabuleiro,
-               jogador->pontuacao);
+        /* ------ Se respondeu pergunta: estatísticas e histórico ------ */
+        if (rj.respondeu_pergunta) {
+            registrar_resultado_casa(avl_casas, rj.casa_pergunta, rj.acertou);
+            salvar_historico_resposta(jogador, &banco_perguntas[rj.id_pergunta],
+                                      rj.resposta_jogador, rj.acertou,
+                                      rj.pontos_ganhos);
+        }
+
+        printf("\n  Posicao final: Casa %d   |   Pontos: %d\n",
+               jogador->posicao_tabuleiro, jogador->pontuacao);
 
         /* ------ Verifica vitória ------ */
         if (jogador->posicao_tabuleiro >= TAMANHO_CAMINHO - 1) {
             vencedor = id_atual;
-            printf("\n  *** %s chegou na CHEGADA e VENCEU o jogo! ***\n",
-                   jogador->nome);
             break;
         }
 
-        imprimir_tabuleiro(caminho, banco_casas, banco_jogadores, qtd_jogadores);
-
         insereFila(&fila_jogadores, id_atual);
         turno++;
+
+        printf("\n  [ENTER para o proximo turno...]");
+        fflush(stdout);
+        flush_buffer();
     }
 
     /* ----------------------------------------------------------
-     * Tela de vitória
+     * Tela final: tabuleiro + vitória + estatísticas + ranking
      * ---------------------------------------------------------- */
-    printf("\n=========================================\n");
-    printf("           ** FIM DE JOGO! **            \n");
-    printf("  Vencedor: %s\n", banco_jogadores[vencedor].nome);
-    printf("  Total de turnos: %d\n", turno);
-    printf("=========================================\n");
+    limpar_tela();
+    imprimir_tabuleiro(caminho, banco_casas, banco_jogadores, qtd_jogadores);
+
+    printf("\n");
+    imprimir_titulo("FIM DE JOGO");
+    printf("\n  *** %s chegou na CHEGADA e VENCEU o jogo! ***\n",
+           banco_jogadores[vencedor].nome);
+    printf("  Total de turnos: %d\n\n", turno);
 
     /* ----------------------------------------------------------
-     * 1. Estatísticas de visitas por casa (Árvore AVL)
-     *    Percorre em ordem crescente de id — O(n)
+     * 1. Estatísticas por casa (Árvore AVL, percurso em ordem)
      * ---------------------------------------------------------- */
-    printf("\n=========================================\n");
-    printf("   ESTATISTICAS DE VISITAS POR CASA      \n");
-    printf("   (Arvore AVL — percurso em ordem)       \n");
-    printf("=========================================\n");
+    imprimir_titulo("ESTATISTICAS POR CASA (Arvore AVL)");
     emOrd_casas(avl_casas);
-    printf("=========================================\n");
+    linha_separadora('=', LARGURA_TELA);
+
+    /* Salva o relatório de estatísticas por casa em disco (CSV). */
+    salvar_estatisticas_casas(avl_casas, banco_casas);
 
     /* ----------------------------------------------------------
      * 2. Salva resultados em disco

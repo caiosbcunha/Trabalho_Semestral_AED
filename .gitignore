@@ -1,0 +1,13 @@
+# Executaveis e objetos
+*.exe
+*.o
+*.obj
+
+# Pasta de build
+output/
+
+# Arquivos gerados em tempo de execucao
+resultados.txt
+perguntas.csv
+historico_respostas.csv
+estatisticas_casas.csv

@@ -5,22 +5,14 @@
 #include <string.h>
 #include <locale.h>
 
-/* ============================================================
- * arvoreAVL.h — Árvore AVL com suporte a contagem de visitas
- *
- * MODIFICAÇÕES em relação à versão original:
- *   • struct NO ganha o campo  int contagem
- *   • inserir()  incrementa contagem quando a chave já existe
- *     (em vez de retornar 0 por duplicata)
- *   • emOrd_casas()  percorre em-ordem e exibe id + contagem
- * ============================================================ */
-
 typedef struct NO* ArvAVL;
 
 struct NO {
     struct NO *esq;
     int info;       /* chave — id da casa no tabuleiro */
     int contagem;   /* quantas vezes essa casa foi visitada */
+    int acertos;    /* perguntas respondidas corretamente nesta casa */
+    int erros;      /* perguntas respondidas incorretamente nesta casa */
     int alt;
     struct NO *dir;
 };
@@ -35,6 +27,7 @@ int  remover(ArvAVL* raiz, int valor);
 struct NO* buscarMenor(struct NO* atual);
 int  consultarValorAVL(ArvAVL* raiz, int valor);
 int  obterContagem(ArvAVL* raiz, int valor);
+void registrar_resultado_casa(ArvAVL* raiz, int casa, int acertou);
 void emOrd_casas(ArvAVL* raiz);
 int  maior(int x, int y);
 int  alt_NO(struct NO* no);
@@ -44,7 +37,7 @@ void RotacaoRR(ArvAVL* raiz);
 void RotacaoRL(ArvAVL* raiz);
 void RotacaoLR(ArvAVL* raiz);
 
-static int contPrint = 0; /* static: evita múltiplas definições */
+int contPrint = 0; /* contador auxiliar de impressao (pre/em/pos-ordem) */
 
 /* ---------------------------------------------------------- */
 
@@ -96,15 +89,37 @@ void posOrd(ArvAVL* raiz) {
 /* ============================================================
  * emOrd_casas
  * Percorre a árvore em ordem crescente de id_casa e imprime
- * quantas vezes cada casa foi visitada.
+ * quantas vezes cada casa foi visitada, com acertos e erros.
  * ============================================================ */
 void emOrd_casas(ArvAVL* raiz) {
     if (raiz == NULL) return;
     if (*raiz != NULL) {
         emOrd_casas(&((*raiz)->esq));
-        printf("  Casa %2d : visitada %d vez(es)\n",
-               (*raiz)->info, (*raiz)->contagem);
+        printf("  Casa %2d : %d visita(s) | %d acerto(s) | %d erro(s)\n",
+               (*raiz)->info, (*raiz)->contagem,
+               (*raiz)->acertos, (*raiz)->erros);
         emOrd_casas(&((*raiz)->dir));
+    }
+}
+
+/* ============================================================
+ * registrar_resultado_casa
+ * Localiza (busca binária O(log n)) a casa 'casa' e contabiliza
+ * o resultado de uma pergunta respondida ali:
+ *   acertou != 0 → incrementa acertos
+ *   acertou == 0 → incrementa erros
+ * A casa já deve existir na árvore (a visita é registrada antes).
+ * ============================================================ */
+void registrar_resultado_casa(ArvAVL* raiz, int casa, int acertou) {
+    if (raiz == NULL || *raiz == NULL) return;
+    struct NO* atual = *raiz;
+    while (atual != NULL) {
+        if (atual->info == casa) {
+            if (acertou) atual->acertos++;
+            else         atual->erros++;
+            return;
+        }
+        atual = (casa < atual->info) ? atual->esq : atual->dir;
     }
 }
 
@@ -150,6 +165,8 @@ int inserir(ArvAVL* raiz, int valor) {
         if (novo == NULL) return 0;
         novo->info     = valor;
         novo->contagem = 1;   /* primeira visita */
+        novo->acertos  = 0;   /* nenhuma pergunta respondida ainda */
+        novo->erros    = 0;
         novo->alt      = 0;
         novo->dir      = NULL;
         novo->esq      = NULL;
@@ -282,6 +299,8 @@ int remover(ArvAVL* raiz, int valor) {
             struct NO* temp = buscarMenor((*raiz)->dir);
             (*raiz)->info     = temp->info;
             (*raiz)->contagem = temp->contagem;
+            (*raiz)->acertos  = temp->acertos;
+            (*raiz)->erros    = temp->erros;
             remover(&(*raiz)->dir, temp->info);
             if (fb_NO(*raiz) >= 2) {
                 if (alt_NO((*raiz)->esq->dir) <= alt_NO((*raiz)->esq->esq))

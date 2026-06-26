@@ -174,10 +174,9 @@ void exibir_ranking_do_disco(Pergunta banco_perguntas[]) {
     }
 
     /* --- Exibição --- */
-    printf("\n=========================================\n");
-    printf("           RANKING FINAL                 \n");
-    printf("   (dados lidos de '%s')\n", ARQUIVO_RESULTADOS);
-    printf("=========================================\n");
+    printf("\n");
+    imprimir_titulo("RANKING FINAL");
+    printf("  (dados lidos de '%s')\n", ARQUIVO_RESULTADOS);
 
     for (int i = 0; i < qtd; i++) {
         printf("\n  %d.  %s\n", i + 1, entradas[i].nome);
@@ -190,10 +189,7 @@ void exibir_ranking_do_disco(Pergunta banco_perguntas[]) {
             for (int j = 0; j < entradas[i].qtd_acertos; j++) {
                 int id = entradas[i].acertos[j];
                 char texto_curto[64];
-                strncpy(texto_curto, banco_perguntas[id].texto, 60);
-                texto_curto[60] = '\0';
-                if (strlen(banco_perguntas[id].texto) > 60)
-                    strcat(texto_curto, "...");
+                resumo_texto(banco_perguntas[id].texto, texto_curto, 60);
                 printf("        [OK] (id %2d) %s\n", id, texto_curto);
             }
         }
@@ -205,17 +201,15 @@ void exibir_ranking_do_disco(Pergunta banco_perguntas[]) {
             for (int j = 0; j < entradas[i].qtd_erros; j++) {
                 int id = entradas[i].erros[j];
                 char texto_curto[64];
-                strncpy(texto_curto, banco_perguntas[id].texto, 60);
-                texto_curto[60] = '\0';
-                if (strlen(banco_perguntas[id].texto) > 60)
-                    strcat(texto_curto, "...");
+                resumo_texto(banco_perguntas[id].texto, texto_curto, 60);
                 printf("        [ X] (id %2d) %s  (Correta: %c)\n",
                        id, texto_curto, banco_perguntas[id].resposta_correta);
             }
         }
     }
 
-    printf("\n=========================================\n");
+    printf("\n");
+    linha_separadora('=', LARGURA_TELA);
 }
 
 #endif /* RANKING_H */
